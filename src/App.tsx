@@ -101,7 +101,7 @@ function App() {
           <Wallet size={24} />
         </div>
         <h1 className="text-xl font-bold tracking-tight text-white">
-          Portfolio<span className="text-indigo-400">Sim</span>
+          Kingston<span className="text-indigo-400">Portfolio</span>
         </h1>
       </div>
 

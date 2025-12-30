@@ -1,5 +1,5 @@
 {
-  "name": "invest-demo",
+  "name": "kingston-portfolio",
   "private": true,
   "version": "0.1.0",
   "scripts": {
@@ -39,7 +39,7 @@
     "vite-plugin-electron-renderer": "^0.14.6",
     "wait-on": "^9.0.3"
   },
-  "description": "InvestDemo: A premium native app for investment demonstration.",
+  "description": "Kingston Portfolio: A premium native app for investment demonstration.",
   "main": "dist-electron/main.cjs",
   "keywords": [],
   "author": "",
