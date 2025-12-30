@@ -9,6 +9,13 @@ export interface PortfolioAllocation {
     [ticker: string]: number; // percentage 0-100
 }
 
+export interface Portfolio {
+    id: string;
+    name: string;
+    allocations: PortfolioAllocation;
+    color: string;
+}
+
 export interface CalculationResult {
     date: string;
     value: number;

@@ -4,7 +4,7 @@ import { AssetManager } from './components/AssetManager';
 import { AllocationPieChart } from './components/PieChart';
 import { Chart } from './components/Chart';
 import { Input } from './components/ui/Input';
-import { AssetData, PortfolioAllocation } from './types/investment';
+import { AssetData, Portfolio } from './types/investment';
 import { calculateAccumulation } from './utils/calculator';
 import { PRESETS } from './constants/presets';
 import { Wallet } from 'lucide-react';
@@ -12,10 +12,16 @@ import { Wallet } from 'lucide-react';
 function App() {
   // State
   const [assets, setAssets] = useState<AssetData[]>([]);
-  const [allocations, setAllocations] = useState<PortfolioAllocation>({});
+
+  // Portfolio State
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([
+    { id: '1', name: 'Main Portfolio', allocations: {}, color: '#818cf8' }
+  ]);
+  const [activePortfolioId, setActivePortfolioId] = useState<string>('1');
+
   const [initialInvestment, setInitialInvestment] = useState<number>(10000);
-  const [startDate, setStartDate] = useState<string>('2010-01-01'); // Default start
-  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]); // Default today
+  const [startDate, setStartDate] = useState<string>('2010-01-01');
+  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Fetch Data
   useEffect(() => {
@@ -25,12 +31,10 @@ function App() {
         const summary = await summaryRes.json();
 
         const loadedAssets: AssetData[] = [];
-        // Summary is an object { TICKER: { file, name } }
         for (const [ticker, item] of Object.entries(summary) as [string, any][]) {
           try {
             const dataRes = await fetch(`/data/${item.file}`);
             const data = await dataRes.json();
-
             loadedAssets.push({
               ticker: ticker,
               name: item.name,
@@ -41,7 +45,42 @@ function App() {
             console.error(`Failed to load ${ticker}`, e);
           }
         }
+
+        // Generate synthetic Savings Account asset (2.5% AER)
+        // We need daily data points for the calculator to work seamlessly (using previous value logic)
+        // Generating from 2000 to 2030 to cover likely ranges
+        const savingsData: Array<[string, number]> = [];
+        let currentDate = new Date('2000-01-01');
+        const stopDate = new Date('2030-01-01');
+        while (currentDate <= stopDate) {
+          savingsData.push([currentDate.toISOString().split('T')[0], 2.5]);
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        loadedAssets.push({
+          ticker: 'SAVINGS',
+          name: 'Savings (2.5% AER)',
+          type: 'yield',
+          data: savingsData
+        });
+
+        // 4% Savings
+        const savingsData4: Array<[string, number]> = [];
+        currentDate = new Date('2000-01-01'); // Reset date
+        while (currentDate <= stopDate) {
+          savingsData4.push([currentDate.toISOString().split('T')[0], 4.0]);
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        loadedAssets.push({
+          ticker: 'SAVINGS_4',
+          name: 'Savings (4.0% AER)',
+          type: 'yield',
+          data: savingsData4
+        });
+
         setAssets(loadedAssets);
+        // Load default preset if empty? No, let user choose.
       } catch (e) {
         console.error("Failed to load summary", e);
       }
@@ -49,41 +88,70 @@ function App() {
     fetchData();
   }, []);
 
-  const handlePresetSelect = (presetId: string) => {
-    const preset = PRESETS.find(p => p.id === presetId);
-    if (preset) {
-      setAllocations(preset.allocations);
+  // Portfolio Management
+  const handleUpdatePortfolio = (id: string, updates: Partial<Portfolio>) => {
+    setPortfolios(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const handleAddPortfolio = () => {
+    const newId = Math.random().toString(36).substr(2, 9);
+    // Pick a random color
+    const colors = ['#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#a78bfa'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    const newPortfolio: Portfolio = {
+      id: newId,
+      name: `Portfolio ${portfolios.length + 1}`,
+      allocations: {},
+      color: randomColor
+    };
+    setPortfolios([...portfolios, newPortfolio]);
+    setActivePortfolioId(newId);
+  };
+
+  const handleRemovePortfolio = (id: string) => {
+    if (portfolios.length <= 1) return;
+    const newPortfolios = portfolios.filter(p => p.id !== id);
+    setPortfolios(newPortfolios);
+    if (activePortfolioId === id) {
+      setActivePortfolioId(newPortfolios[0].id);
     }
   };
 
-  // Calculate Results
-  // Filter assets to only those that are selected (even if 0% allocation initially) so we can run calc
-  const activeAssets = useMemo(() => {
-    // We want assets that match keys in allocations
-    const active = assets.filter(a => allocations.hasOwnProperty(a.ticker));
-    console.log('Active assets computation:', {
-      totalAssets: assets.length,
-      allocations,
-      activeCount: active.length
-    });
-    return active;
-  }, [assets, allocations]);
-
-  const results = useMemo(() => {
-    if (activeAssets.length === 0) {
-      console.log('App: No active assets');
-      return [];
+  const handlePresetSelect = (presetId: string) => {
+    const preset = PRESETS.find(p => p.id === presetId);
+    if (preset) {
+      handleUpdatePortfolio(activePortfolioId, { allocations: preset.allocations });
     }
-    const res = calculateAccumulation(activeAssets, allocations, initialInvestment, startDate, endDate);
-    console.log('App: Results computed', { length: res.length, first: res[0], last: res[res.length - 1] });
-    return res;
-  }, [activeAssets, allocations, initialInvestment, startDate, endDate]);
+  };
 
-  // Derived Metrics
+  // Calculate Results for ALL portfolios
+  const chartSeries = useMemo(() => {
+    return portfolios.map(portfolio => {
+      // Active assets for THIS portfolio
+      const activeAssets = assets.filter(a => portfolio.allocations.hasOwnProperty(a.ticker));
+
+      let data: any[] = [];
+      if (activeAssets.length > 0) {
+        data = calculateAccumulation(activeAssets, portfolio.allocations, initialInvestment, startDate, endDate);
+      }
+
+      return {
+        id: portfolio.id,
+        name: portfolio.name,
+        color: portfolio.color,
+        data: data
+      };
+    });
+  }, [portfolios, assets, initialInvestment, startDate, endDate]);
+
+  // Metrics for ACTIVE portfolio (to display in header)
+  const activeSeries = chartSeries.find(s => s.id === activePortfolioId);
+  const results = activeSeries?.data || [];
   const finalValue = results.length > 0 ? results[results.length - 1].value : initialInvestment;
   const totalReturn = ((finalValue - initialInvestment) / initialInvestment) * 100;
 
-  // CAGR Calculation (Years based on actual date diff)
+  // CAGR Calculation
   const cagr = useMemo(() => {
     if (results.length < 2) return 0;
     const start = new Date(startDate).getTime();
@@ -93,25 +161,28 @@ function App() {
     return (Math.pow(finalValue / initialInvestment, 1 / years) - 1) * 100;
   }, [results, finalValue, initialInvestment, startDate, endDate]);
 
+  const activePortfolioData = portfolios.find(p => p.id === activePortfolioId);
+
   // Header Component
   const HeaderControls = (
-    <div className="flex items-center gap-8 w-full">
-      <div className="flex items-center gap-3">
+    <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 lg:gap-8 w-full p-2 lg:p-0">
+      <div className="flex items-center gap-3 min-w-fit">
         <div className="bg-indigo-500/20 p-2 rounded-lg text-indigo-400">
           <Wallet size={24} />
         </div>
-        <h1 className="text-xl font-bold tracking-tight text-white">
+        <h1 className="text-xl font-bold tracking-tight text-white hidden sm:block">
           Kingston<span className="text-indigo-400">Portfolio</span>
         </h1>
       </div>
 
-      <div className="h-8 w-px bg-white/10" />
+      <div className="h-px w-full lg:h-8 lg:w-px bg-white/10" />
 
-      <div className="flex items-center gap-4 flex-1">
-        <div className="flex flex-col gap-1">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3 flex-1 w-full lg:w-auto">
+        <div className="flex flex-col gap-1 w-[140px]">
           <label className="text-xs font-medium text-gray-400">Preset</label>
           <select
-            className="bg-[#18181b] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            className="bg-[#18181b] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 w-full"
             onChange={(e) => handlePresetSelect(e.target.value)}
             defaultValue=""
           >
@@ -126,52 +197,51 @@ function App() {
           type="number"
           value={initialInvestment}
           onChange={(e) => setInitialInvestment(Number(e.target.value))}
-          label="Initial Investment (£)"
-          className="w-40 font-mono"
+          label="Initial Inv (£)"
+          className="w-28 font-mono text-xs"
         />
 
         <div className="flex items-end gap-2">
-          {/* ... inputs ... */}
           <Input
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            label="Start Date"
-            className="w-40 font-mono"
+            label="Start"
+            className="w-32 font-mono text-xs"
           />
-          <span className="text-gray-500 pb-3">-</span>
           <Input
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            label="End Date"
-            className="w-40 font-mono"
+            label="End"
+            className="w-32 font-mono text-xs"
           />
         </div>
       </div>
 
-      <div className="flex items-center gap-6">
-        <div className="text-right">
-          <div className="text-xs text-gray-400 uppercase font-medium">Total Return</div>
-          <div className={`text-xl font-bold font-mono ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {totalReturn > 0 ? '+' : ''}{totalReturn.toFixed(2)}%
+      {/* Stats - Compact Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex lg:items-center gap-4 lg:gap-6 w-full lg:w-auto mt-2 lg:mt-0 bg-white/5 lg:bg-transparent p-3 lg:p-0 rounded-xl">
+        <div className="text-left lg:text-right">
+          <div className="text-[10px] text-gray-400 uppercase font-medium">Return</div>
+          <div className={`text-base lg:text-lg font-bold font-mono ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {totalReturn > 0 ? '+' : ''}{totalReturn.toFixed(1)}%
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-gray-400 uppercase font-medium">Nominal Gain</div>
-          <div className={`text-xl font-bold font-mono ${finalValue >= initialInvestment ? 'text-green-400' : 'text-red-400'}`}>
+        <div className="text-left lg:text-right">
+          <div className="text-[10px] text-gray-400 uppercase font-medium">Gain</div>
+          <div className={`text-base lg:text-lg font-bold font-mono ${finalValue >= initialInvestment ? 'text-green-400' : 'text-red-400'}`}>
             {finalValue >= initialInvestment ? '+' : '-'}£{Math.abs(finalValue - initialInvestment).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-gray-400 uppercase font-medium">CAGR</div>
-          <div className={`text-xl font-bold font-mono ${cagr >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {cagr.toFixed(2)}%
+        <div className="text-left lg:text-right">
+          <div className="text-[10px] text-gray-400 uppercase font-medium">CAGR</div>
+          <div className={`text-base lg:text-lg font-bold font-mono ${cagr >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {cagr.toFixed(1)}%
           </div>
         </div>
-        <div className="bg-white/5 rounded-xl px-4 py-2 border border-white/10">
-          <div className="text-xs text-gray-400 uppercase font-medium">Final Value</div>
-          <div className="text-xl font-bold text-white font-mono">
+        <div className="lg:bg-white/5 lg:rounded-xl lg:px-4 lg:py-2 lg:border lg:border-white/10 text-left">
+          <div className="text-[10px] text-gray-400 uppercase font-medium">Value</div>
+          <div className="text-lg lg:text-xl font-bold text-white font-mono">
             £{Math.round(finalValue).toLocaleString()}
           </div>
         </div>
@@ -183,22 +253,29 @@ function App() {
     <Layout
       header={HeaderControls}
       sidebar={
-        <AssetManager
-          availableAssets={assets}
-          allocations={allocations}
-          onUpdateAllocations={setAllocations}
-        />
+        activePortfolioData ? (
+          <AssetManager
+            availableAssets={assets}
+            activePortfolioId={activePortfolioId}
+            portfolios={portfolios}
+            onUpdatePortfolio={handleUpdatePortfolio}
+            onAddPortfolio={handleAddPortfolio}
+            onRemovePortfolio={handleRemovePortfolio}
+            onSetActivePortfolio={setActivePortfolioId}
+          />
+        ) : null
       }
       pieChart={
-        <AllocationPieChart
-          assets={assets}
-          allocations={allocations}
-        />
+        activePortfolioData ? (
+          <AllocationPieChart
+            assets={assets}
+            allocations={activePortfolioData.allocations}
+          />
+        ) : null
       }
       main={
         <Chart
-          data={results}
-          allocations={allocations}
+          series={chartSeries}
           initialInvestment={initialInvestment}
         />
       }

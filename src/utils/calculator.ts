@@ -9,7 +9,7 @@ export function calculateAccumulation(
 ): CalculationResult[] {
     // 1. Pre-process assets: Filter by date range and sort
     const processedAssets = assets.map(asset => {
-        const isYield = ['^IRX', '^FVX', '^TNX'].includes(asset.ticker);
+        const isYield = asset.type === 'yield' || ['^IRX', '^FVX', '^TNX'].includes(asset.ticker);
         return {
             ...asset,
             type: isYield ? 'yield' : 'price' as 'yield' | 'price',

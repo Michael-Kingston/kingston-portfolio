@@ -3,21 +3,41 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
-import { AssetData, PortfolioAllocation } from '../types/investment';
+import { AssetData, Portfolio } from '../types/investment';
 
 interface AssetManagerProps {
     availableAssets: AssetData[];
-    allocations: PortfolioAllocation;
-    onUpdateAllocations: (newAllocations: PortfolioAllocation) => void;
+    activePortfolioId: string;
+    portfolios: Portfolio[];
+    onUpdatePortfolio: (id: string, updates: Partial<Portfolio>) => void;
+    onAddPortfolio: () => void;
+    onRemovePortfolio: (id: string) => void;
+    onSetActivePortfolio: (id: string) => void;
 }
 
-export function AssetManager({ availableAssets, allocations, onUpdateAllocations }: AssetManagerProps) {
+export function AssetManager({
+    availableAssets,
+    activePortfolioId,
+    portfolios,
+    onUpdatePortfolio,
+    onAddPortfolio,
+    onRemovePortfolio,
+    onSetActivePortfolio
+}: AssetManagerProps) {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
+    const activePortfolio = portfolios.find(p => p.id === activePortfolioId);
+
+    if (!activePortfolio) return null;
+
+    const allocations = activePortfolio.allocations;
+
     const handleAddAsset = (ticker: string) => {
-        onUpdateAllocations({
-            ...allocations,
-            [ticker]: 0 // Start with 0 allocation
+        onUpdatePortfolio(activePortfolioId, {
+            allocations: {
+                ...allocations,
+                [ticker]: 0
+            }
         });
         setIsAddModalOpen(false);
     };
@@ -25,30 +45,88 @@ export function AssetManager({ availableAssets, allocations, onUpdateAllocations
     const handleRemoveAsset = (ticker: string) => {
         const newAllocations = { ...allocations };
         delete newAllocations[ticker];
-        onUpdateAllocations(newAllocations);
+        onUpdatePortfolio(activePortfolioId, { allocations: newAllocations });
     };
 
     const handleAllocationChange = (ticker: string, value: number) => {
-        onUpdateAllocations({
-            ...allocations,
-            [ticker]: value
+        onUpdatePortfolio(activePortfolioId, {
+            allocations: {
+                ...allocations,
+                [ticker]: value
+            }
         });
     };
 
     // Get assets not yet in portfolio
     const unusedAssets = availableAssets.filter(a => !allocations.hasOwnProperty(a.ticker));
-
     const totalAllocation = Object.values(allocations).reduce((sum: number, val: number) => sum + val, 0);
 
     return (
         <Card className="h-full flex flex-col">
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-                    Assets
+            {/* Portfolio Selector */}
+            <div className="mb-6 space-y-3">
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                    {portfolios.map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => onSetActivePortfolio(p.id)}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2 ${p.id === activePortfolioId
+                                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/50'
+                                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 border border-transparent'
+                                }`}
+                        >
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+                            {p.name}
+                        </button>
+                    ))}
+                    <button
+                        onClick={onAddPortfolio}
+                        className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 transition-colors"
+                        title="Add Portfolio"
+                    >
+                        <Plus size={16} />
+                    </button>
+                </div>
+
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={activePortfolio.name}
+                        onChange={(e) => onUpdatePortfolio(activePortfolioId, { name: e.target.value })}
+                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                        placeholder="Portfolio Name"
+                    />
+                    {portfolios.length > 1 && (
+                        <button
+                            onClick={() => onRemovePortfolio(activePortfolioId)}
+                            className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                            title="Delete Portfolio"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
+                    Allocations
                 </h2>
-                <Button size="sm" variant="secondary" onClick={() => setIsAddModalOpen(true)}>
-                    <Plus size={16} className="mr-1" /> Add
-                </Button>
+                <div className="flex gap-2">
+                    {Object.keys(allocations).length > 0 && (
+                        <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => onUpdatePortfolio(activePortfolioId, { allocations: {} })}
+                            className="bg-red-500/10 text-red-400 hover:bg-red-500/20 border-transparent"
+                        >
+                            <Trash2 size={16} className="mr-1" /> Clear All
+                        </Button>
+                    )}
+                    <Button size="sm" variant="secondary" onClick={() => setIsAddModalOpen(true)}>
+                        <Plus size={16} className="mr-1" /> Add Asset
+                    </Button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
@@ -102,11 +180,6 @@ export function AssetManager({ availableAssets, allocations, onUpdateAllocations
                         {totalAllocation}%
                     </span>
                 </div>
-                {totalAllocation !== 100 && (
-                    <p className="text-xs text-center text-gray-500 mt-2">
-                        Target 100% for full deployment
-                    </p>
-                )}
             </div>
 
             <Modal

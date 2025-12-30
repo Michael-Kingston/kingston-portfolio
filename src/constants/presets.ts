@@ -98,5 +98,18 @@ export const PRESETS: Preset[] = [
             'NVDA': 15,
             'TSLA': 15
         }
+    },
+    {
+        id: 'safe_diverse',
+        name: 'Safe Diverse',
+        description: '35% S&P 500, 15% Intn\'l, 10% Emerging, 20% Bonds, 10% Gold, 10% Savings (2.5%).',
+        allocations: {
+            'SPY': 35,
+            'VEU': 15,
+            'EEM': 10,
+            'IEF': 20,
+            'GLD': 10,
+            'SAVINGS': 10
+        }
     }
 ];
